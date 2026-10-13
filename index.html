@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카카오 지도 장소 검색 서비스</title>
+    <!-- Tailwind CSS (UI 디자인 스타일링을 위한 라이브러리) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome (아이콘 표시를 위한 라이브러리) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts (Inter, Noto Sans KR 폰트 적용) -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+
+        /* 스크롤바 커스텀 스타일링 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* 커스텀 인포윈도우 스타일 */
+        .custom-overlay {
+            position: relative;
+            bottom: 12px;
+            border-radius: 12px;
+            float: left;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            background: #ffffff;
+            padding: 14px 18px;
+            font-size: 13px;
+            font-weight: 400;
+        }
+
+        .custom-overlay::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 10px 10px 0;
+            border-style: solid;
+            border-color: #ffffff transparent;
+            display: block;
+            width: 0;
+        }
+
+        /* 현재 위치 펄스 에니메이션 마커 */
+        .my-location-marker {
+            width: 16px;
+            height: 16px;
+            background-color: #2563eb;
+            border: 3px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgba(37, 99, 235, 0.6);
+            position: relative;
+        }
+        .my-location-marker::before {
+            content: '';
+            position: absolute;
+            top: -6px;
+            left: -6px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background-color: rgba(37, 99, 235, 0.4);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                opacity: 0.8;
+            }
+            70% {
+                transform: scale(1.6);
+                opacity: 0;
+            }
+            100% {
+                transform: scale(0.95);
+                opacity: 0;
+            }
+        }
+    </style>
+
+    <!-- 카카오 지도 JavaScript API SDK 불러오기 (autoload=false 적용) -->
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=0284f30d15a21cd8c8d334026cc26d3b&libraries=services&autoload=false"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 h-screen flex flex-col md:flex-row overflow-hidden">
+
+    <!-- [왼쪽 영역] 검색창 + 결과 리스트 (Width: md 이상에서 380px, 모바일에서는 분할) -->
+    <aside class="w-full md:w-[400px] h-1/2 md:h-full bg-white flex flex-col z-10 shadow-xl border-r border-slate-200">
+        <!-- 헤더 영역 -->
+        <header class="p-4 bg-indigo-600 text-white flex items-center justify-between shadow-md">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid me-1 fa-map-location-dot text-amber-300 text-xl"></i>
+                <h1 class="text-lg font-bold tracking-tight">장소 검색 지도</h1>
+            </div>
+            <span class="text-xs bg-indigo-500 text-indigo-100 px-2 py-1 rounded-full font-medium">Kakao API</span>
+        </header>
+
+        <!-- 검색창 입력 영역 -->
+        <section class="p-4 bg-slate-50 border-b border-slate-200 space-y-3">
+            <form id="searchForm" onsubmit="handleSearchSubmit(event)" class="relative flex items-center">
+                <input 
+                    type="text" 
+                    id="keywordInput" 
+                    placeholder="장소, 맛집, 카페 등을 입력하세요" 
+                    value="강남역 맛집"
+                    class="w-full pl-10 pr-10 py-2.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm"
+                />
+                <i class="fa-solid fa-magnifying-glass absolute left-3.5 text-slate-400"></i>
+                <button 
+                    type="button" 
+                    onclick="clearSearchInput()" 
+                    id="clearBtn"
+                    class="hidden absolute right-12 text-slate-400 hover:text-slate-600 p-1"
+                >
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+                <button 
+                    type="submit" 
+                    class="ml-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition duration-150 flex items-center justify-center shadow-md active:scale-95"
+                >
+                    검색
+                </button>
+            </form>
+
+            <!-- 추천 키워드 태그 -->
+            <div class="flex items-center space-x-1.5 overflow-x-auto pb-1 text-xs text-slate-600">
+                <span class="text-slate-400 shrink-0"><i class="fa-solid fa-fire text-amber-500"></i> 추천:</span>
+                <button onclick="searchByTag('카페')" class="bg-white border border-slate-200 px-2.5 py-1 rounded-full hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 shrink-0 transition">카페</button>
+                <button onclick="searchByTag('편의점')" class="bg-white border border-slate-200 px-2.5 py-1 rounded-full hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 shrink-0 transition">편의점</button>
+                <button onclick="searchByTag('약국')" class="bg-white border border-slate-200 px-2.5 py-1 rounded-full hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 shrink-0 transition">약국</button>
+                <button onclick="searchByTag('주차장')" class="bg-white border border-slate-200 px-2.5 py-1 rounded-full hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 shrink-0 transition">주차장</button>
+            </div>
+        </section>
+
+        <!-- 검색 상태 및 결과 개수 요약 -->
+        <div class="px-4 py-2.5 bg-slate-100 border-b border-slate-200 flex justify-between items-center text-xs text-slate-600">
+            <span>검색 결과: <strong id="resultCountText" class="text-indigo-600 font-bold">0</strong>건</span>
+            <span id="searchStatusText" class="text-slate-500">대기 중</span>
+        </div>
+
+        <!-- 검색 결과 목록 (스크롤 가능) -->
+        <section id="placesListContainer" class="flex-1 overflow-y-auto p-3 space-y-2.5 bg-slate-50">
+            <!-- 자바스크립트로 검색 결과 리스트가 동적 삽입됩니다 -->
+            <div class="flex flex-col items-center justify-center h-full text-slate-400 space-y-2 py-10">
+                <i class="fa-solid fa-map-pin text-3xl text-slate-300"></i>
+                <p class="text-sm">검색어를 입력하거나 추천 태그를 클릭하세요.</p>
+            </div>
+        </section>
+
+        <!-- 페이지네이션 하단 영역 -->
+        <footer id="paginationContainer" class="p-3 bg-white border-t border-slate-200 flex justify-center items-center space-x-1">
+            <!-- 페이지 번호 버튼들이 dynamic하게 표시됩니다 -->
+        </footer>
+    </aside>
+
+    <!-- [오른쪽 영역] 지도 화면 -->
+    <main class="w-full md:flex-1 h-1/2 md:h-full relative bg-slate-200">
+        <!-- 카카오 지도가 그려지는 컨테이너 -->
+        <div id="map" class="w-full h-full"></div>
+
+        <!-- 지도 위 상단 플로팅 도구 버튼들 -->
+        <div class="absolute top-4 right-4 z-10 flex flex-col space-y-2">
+            <!-- 현재 위치로 이동 버튼 -->
+            <button 
+                onclick="moveToCurrentLocation()" 
+                title="현재 위치로 이동"
+                class="bg-white hover:bg-slate-50 text-slate-700 w-10 h-10 rounded-xl shadow-lg border border-slate-200 flex items-center justify-center transition active:scale-95 group"
+            >
+                <i class="fa-solid fa-crosshairs text-indigo-600 group-hover:rotate-45 transition-transform duration-300"></i>
+            </button>
+
+            <!-- 지도 확대 레벨 5로 재설정 버튼 -->
+            <button 
+                onclick="resetZoomLevel()" 
+                title="기본 확대 레벨(5)로 설정"
+                class="bg-white hover:bg-slate-50 text-slate-700 w-10 h-10 rounded-xl shadow-lg border border-slate-200 flex items-center justify-center transition active:scale-95 text-xs font-bold"
+            >
+                Lv5
+            </button>
+        </div>
+
+        <!-- 현재 위치 상태 표시 알림 바 -->
+        <div id="locationStatusBadge" class="absolute bottom-4 left-4 z-10 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md border border-slate-200 text-xs flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+            <span id="locationBadgeText" class="text-slate-600 font-medium">위치 확인 중...</span>
+        </div>
+    </main>
+
+    <!-- 커스텀 토스트 알림창 (alert 대용) -->
+    <div id="toastMessage" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-2xl text-sm font-medium opacity-0 transition-opacity duration-300 pointer-events-none z-50 flex items-center space-x-2">
+        <i class="fa-solid fa-circle-info text-indigo-400"></i>
+        <span id="toastText">알림 메시지</span>
+    </div>
+
+    <script>
+        /**
+         * 전역 변수 선언 (Global Variables)
+         * 고등학생 웹 입문자를 위해 한글 설명 주석을 상세하게 추가했습니다.
+         */
+        let mapInstance = null;         // Kakao 지도 객체를 저장할 변수
+        let placesService = null;       // Kakao 장소 검색 서비스 객체
+        let currentInfoWindow = null;   // 현재 열려있는 인포윈도우 객체
+        let placeMarkers = [];          // 검색 결과 마커들을 보관할 배열
+        let userLocationMarker = null;  // 현재 위치 마커
+        let userLatitude = 37.566826;   // 기본 위도 (서울시청 기준)
+        let userLongitude = 126.9786567;// 기본 경도 (서울시청 기준)
+
+        /**
+         * 1. 웹 페이지 로드가 완료되면 실행되는 초기화 이벤트
+         * Kakao Maps SDK가 완전히 다운로드된 후 kakao.maps.load() 함수로 안전하게 초기화합니다.
+         */
+        window.onload = function() {
+            // kakao.maps.load 콜백을 사용하여 API 로드 후 지도 생성 (로딩 오류 방지 필수 설정)
+            kakao.maps.load(function() {
+                initKakaoMap();
+            });
+
+            // 검색창 입력 감지하여 X버튼 표시 여부 제어
+            const inputEl = document.getElementById('keywordInput');
+            const clearBtn = document.getElementById('clearBtn');
+            inputEl.addEventListener('input', function() {
+                if (this.value.length > 0) {
+                    clearBtn.classList.remove('hidden');
+                } else {
+                    clearBtn.classList.add('hidden');
+                }
+            });
+        };
+
+        /**
+         * 2. 카카오 지도 및 서비스 초기화 함수
+         */
+        function initKakaoMap() {
+            const mapContainer = document.getElementById('map'); // 지도를 표시할 HTML 엘리먼트
+            
+            // 지도 초기 설정 옵션
+            const mapOptions = {
+                center: new kakao.maps.LatLng(userLatitude, userLongitude), // 지도의 중심좌표
+                level: 5 // 지도의 확대 레벨 (요청사항: 5)
+            };
+
+            // 지도 생성
+            mapInstance = new kakao.maps.Map(mapContainer, mapOptions);
+
+            // 장소 검색 서비스 객체 생성
+            placesService = new kakao.maps.services.Places();
+
+            // 인포윈도우(마커 클릭 시 생성되는 팝업창) 객체 생성
+            currentInfoWindow = new kakao.maps.InfoWindow({ zIndex: 1 });
+
+            // 지도 컨트롤(Zoom Control) 추가
+            const zoomControl = new kakao.maps.ZoomControl();
+            mapInstance.addControl(zoomControl, kakao.maps.ControlPosition.RIGHT);
+
+            // 사용자의 현재 위치 요청 (Geolocation API)
+            requestUserLocation();
+        }
+
+        /**
+         * 3. 브라우저 Geolocation API를 사용한 사용자 현재 위치 가져오기
+         */
+        function requestUserLocation() {
+            const badgeText = document.getElementById('locationBadgeText');
+
+            if (navigator.geolocation) {
+                // 브라우저 위치 권한 요청
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        userLatitude = position.coords.latitude;
+                        userLongitude = position.coords.longitude;
+                        const currentLatLng = new kakao.maps.LatLng(userLatitude, userLongitude);
+
+                        // 지도의 중심을 현재 위치로 이동 및 레벨 5 설정
+                        mapInstance.setCenter(currentLatLng);
+                        mapInstance.setLevel(5);
+
+                        // 현재 위치 표시 마커 생성
+                        displayCurrentLocationMarker(currentLatLng);
+
+                        badgeText.textContent = "현재 위치 중심 설정 완료";
+                        showToast("현재 위치를 중심으로 지도가 설정되었습니다.");
+
+                        // 초기 기본 검색 실행 (예: '강남역 맛집')
+                        executePlaceSearch();
+                    },
+                    function(error) {
+                        console.warn('Geolocation 접근 거부 또는 오류:', error.message);
+                        badgeText.textContent = "기본 위치 설정됨 (서울시청)";
+                        showToast("위치 권한이 거부되어 기본 위치로 설정되었습니다.");
+                        
+                        // 현재 위치 실패 시에도 기본 위치 기반 검색 진행
+                        executePlaceSearch();
+                    },
+                    { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
+                );
+            } else {
+                badgeText.textContent = "Geolocation 미지원 브라우저";
+                executePlaceSearch();
+            }
+        }
+
+        /**
+         * 4. 현재 위치 마커 표시 함수
+         */
+        function displayCurrentLocationMarker(latLng) {
+            // 기존 사용자 위치 마커가 있다면 제거
+            if (userLocationMarker) {
+                userLocationMarker.setMap(null);
+            }
+
+            // CustomOverlay를 활용한 세련된 현재 위치 펄스 아이콘 생성
+            const markerContent = document.createElement('div');
+            markerContent.className = 'my-location-marker';
+            markerContent.title = '현재 위치';
+
+            userLocationMarker = new kakao.maps.CustomOverlay({
+                position: latLng,
+                content: markerContent,
+                yAnchor: 0.5,
+                xAnchor: 0.5
+            });
+
+            userLocationMarker.setMap(mapInstance);
+        }
+
+        /**
+         * 5. 장소 검색 실행 함수 (키워드 검색)
+         */
+        function executePlaceSearch() {
+            const keyword = document.getElementById('keywordInput').value.trim();
+
+            if (!keyword) {
+                showToast("검색할 장소나 키워드를 입력해 주세요.");
+                return;
+            }
+
+            document.getElementById('searchStatusText').textContent = "검색 중...";
+
+            // 현재 지도 중심 좌표 근처 검색 옵션 설정 가능
+            const searchOptions = {
+                location: mapInstance.getCenter(),
+                radius: 5000 // 중심좌표 기준 5km 반경
+            };
+
+            // 카카오 키워드 검색 API 호출
+            placesService.keywordSearch(keyword, handleSearchCallback);
+        }
+
+        /**
+         * 6. 검색 결과를 처리하는 콜백 함수
+         */
+        function handleSearchCallback(data, status, pagination) {
+            const statusTextEl = document.getElementById('searchStatusText');
+            const resultCountEl = document.getElementById('resultCountText');
+
+            if (status === kakao.maps.services.Status.OK) {
+                // 정상적으로 검색 결과를 받았을 때
+                statusTextEl.textContent = "검색 완료";
+                resultCountEl.textContent = data.length;
+
+                // 기존 지도 마커 및 검색목록 초기화
+                clearPreviousMarkers();
+                
+                // 검색 결과 리스트 및 지도 마커 등록
+                renderPlacesList(data);
+                renderPaginationButtons(pagination);
+
+                // 검색 결과 첫 번째 장소의 좌표들로 지도의 영역을 맞춤
+                const bounds = new kakao.maps.LatLngBounds();
+                for (let i = 0; i < data.length; i++) {
+                    bounds.extend(new kakao.maps.LatLng(data[i].y, data[i].x));
+                }
+                mapInstance.setBounds(bounds);
+                
+                // 확대 레벨이 너무 작아지거나 커지지 않도록 안전 조치 (확대 레벨 5 부근 유지)
+                if (mapInstance.getLevel() > 6) {
+                    mapInstance.setLevel(5);
+                }
+
+            } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+                statusTextEl.textContent = "결과 없음";
+                resultCountEl.textContent = "0";
+                clearPreviousMarkers();
+                renderEmptyResultState("검색 결과가 존재하지 않습니다.");
+                showToast("검색 결과가 존재하지 않습니다.");
+            } else if (status === kakao.maps.services.Status.ERROR) {
+                statusTextEl.textContent = "오류 발생";
+                showToast("장소 검색 도중 오류가 발생했습니다.");
+            }
+        }
+
+        /**
+         * 7. 검색 결과 리스트를 HTML 목록으로 출력하는 함수
+         */
+        function renderPlacesList(places) {
+            const listContainer = document.getElementById('placesListContainer');
+            listContainer.innerHTML = ''; // 기존 리스트 비우기
+
+            places.forEach((place, index) => {
+                const placeLatLng = new kakao.maps.LatLng(place.y, place.x);
+
+                // 지도 마커 추가
+                const marker = addPlaceMarker(placeLatLng, index);
+                placeMarkers.push(marker);
+
+                // 리스트 아이템 엘리먼트 생성
+                const itemEl = document.createElement('div');
+                itemEl.className = 'bg-white p-3.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition duration-150 cursor-pointer flex items-start space-x-3 group';
+
+                // 번호 뱃지
+                const badgeNumber = index + 1;
+                
+                itemEl.innerHTML = `
+                    <div class="flex-shrink-0 w-7 h-7 bg-indigo-100 group-hover:bg-indigo-600 group-hover:text-white text-indigo-600 rounded-lg flex items-center justify-center font-bold text-xs transition-colors">
+                        ${badgeNumber}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-slate-800 group-hover:text-indigo-600 text-sm truncate transition-colors">
+                            ${place.place_name}
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-1 truncate">
+                            <i class="fa-solid fa-location-dot text-slate-400 mr-1"></i>${place.road_address_name || place.address_name}
+                        </p>
+                        ${place.phone ? `
+                            <p class="text-xs text-slate-400 mt-0.5">
+                                <i class="fa-solid fa-phone text-slate-300 mr-1"></i>${place.phone}
+                            </p>
+                        ` : ''}
+                        <div class="mt-2 flex items-center space-x-2">
+                            <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-medium">
+                                ${place.category_group_name || '일반'}
+                            </span>
+                            <a href="${place.place_url}" target="_blank" onclick="event.stopPropagation()" class="text-[11px] text-indigo-500 hover:text-indigo-700 underline flex items-center">
+                                상세정보 <i class="fa-solid fa-arrow-up-right-from-square text-[9px] ml-0.5"></i>
+                            </a>
+                        </div>
+                    </div>
+                `;
+
+                // 리스트 클릭 이벤트: 해당 위치로 지도 중심 이동 및 인포윈도우 생성
+                itemEl.onclick = function() {
+                    mapInstance.panTo(placeLatLng);
+                    openInfoWindow(marker, place);
+                };
+
+                listContainer.appendChild(itemEl);
+            });
+        }
+
+        /**
+         * 8. 지도 위에 장소 마커 추가 함수
+         */
+        function addPlaceMarker(position, index) {
+            // 카카오 지도 기본 마커 이미지 또는 커스텀 마커
+            const marker = new kakao.maps.Marker({
+                position: position,
+                map: mapInstance
+            });
+
+            // 마커 클릭 시 정보 창 표시
+            kakao.maps.event.addListener(marker, 'click', function() {
+                openInfoWindow(marker, arguments[0] || null);
+            });
+
+            return marker;
+        }
+
+        /**
+         * 9. 인포윈도우(팝업 카드) 열기 함수
+         */
+        function openInfoWindow(marker, place) {
+            if (!place) return;
+
+            const contentHtml = `
+                <div class="p-3 max-w-[220px]">
+                    <h4 class="font-bold text-sm text-slate-800 leading-tight">${place.place_name}</h4>
+                    <p class="text-xs text-slate-500 mt-1">${place.road_address_name || place.address_name}</p>
+                    <p class="text-xs text-indigo-600 mt-1 font-medium">${place.phone || '전화번호 없음'}</p>
+                    <a href="${place.place_url}" target="_blank" class="inline-block mt-2 text-xs bg-indigo-600 text-white px-2.5 py-1 rounded-md hover:bg-indigo-700 transition">
+                        카카오맵 길찾기
+                    </a>
+                </div>
+            `;
+
+            currentInfoWindow.setContent(contentHtml);
+            currentInfoWindow.open(mapInstance, marker);
+        }
+
+        /**
+         * 10. 기존 마커 지우기 함수
+         */
+        function clearPreviousMarkers() {
+            for (let i = 0; i < placeMarkers.length; i++) {
+                placeMarkers[i].setMap(null);
+            }
+            placeMarkers = [];
+            if (currentInfoWindow) {
+                currentInfoWindow.close();
+            }
+        }
+
+        /**
+         * 11. 검색 결과가 없을 때 리스트 영역 안내 처리
+         */
+        function renderEmptyResultState(message) {
+            const listContainer = document.getElementById('placesListContainer');
+            listContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full text-slate-400 space-y-2 py-12">
+                    <i class="fa-solid fa-circle-exclamation text-3xl text-slate-300"></i>
+                    <p class="text-sm font-medium text-slate-500">${message}</p>
+                    <p class="text-xs text-slate-400">다른 검색어로 다시 시도해 보세요.</p>
+                </div>
+            `;
+            document.getElementById('paginationContainer').innerHTML = '';
+        }
+
+        /**
+         * 12. 페이지네이션 버튼 동적 생성
+         */
+        function renderPaginationButtons(pagination) {
+            const paginationContainer = document.getElementById('paginationContainer');
+            paginationContainer.innerHTML = '';
+
+            for (let i = 1; i <= pagination.last; i++) {
+                const pageBtn = document.createElement('button');
+                pageBtn.className = `w-7 h-7 text-xs font-semibold rounded-lg transition ${
+                    i === pagination.current 
+                        ? 'bg-indigo-600 text-white shadow' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`;
+                pageBtn.innerText = i;
+                pageBtn.onclick = (function(page) {
+                    return function() {
+                        pagination.gotoPage(page);
+                    };
+                })(i);
+
+                paginationContainer.appendChild(pageBtn);
+            }
+        }
+
+        /**
+         * [유틸리티/이벤트 핸들러 함수들]
+         */
+        
+        // 폼 제출 시 검색 실행
+        function handleSearchSubmit(event) {
+            event.preventDefault();
+            executePlaceSearch();
+        }
+
+        // 추천 태그 클릭 시 검색
+        function searchByTag(tagName) {
+            const inputEl = document.getElementById('keywordInput');
+            inputEl.value = tagName;
+            document.getElementById('clearBtn').classList.remove('hidden');
+            executePlaceSearch();
+        }
+
+        // 검색어 입력창 초기화
+        function clearSearchInput() {
+            const inputEl = document.getElementById('keywordInput');
+            inputEl.value = '';
+            document.getElementById('clearBtn').classList.add('hidden');
+            inputEl.focus();
+        }
+
+        // 내 위치로 이동 버튼 클릭
+        function moveToCurrentLocation() {
+            if (userLatitude && userLongitude) {
+                const currentLatLng = new kakao.maps.LatLng(userLatitude, userLongitude);
+                mapInstance.panTo(currentLatLng);
+                mapInstance.setLevel(5); // 확대 레벨 5 재설정
+                showToast("현재 위치로 이동했습니다.");
+            } else {
+                requestUserLocation();
+            }
+        }
+
+        // 기본 확대 레벨(5)로 즉시 재설정
+        function resetZoomLevel() {
+            if (mapInstance) {
+                mapInstance.setLevel(5);
+                showToast("지도 확대 레벨이 5로 설정되었습니다.");
+            }
+        }
+
+        // alert() 사용 대신 알림 토스트 메시지 출력
+        function showToast(message) {
+            const toast = document.getElementById('toastMessage');
+            const toastText = document.getElementById('toastText');
+            
+            toastText.textContent = message;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            toast.classList.add('opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 2500);
+        }
+    </script>
+</body>
+</html>
