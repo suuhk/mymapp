@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍰 디저트 투어 카카오 지도</title>
+    <!-- Tailwind CSS (UI 디자인 스타일링) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome (아이콘 라이브러리) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts (Noto Sans KR 적용) -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+
+        /* 스크롤바 커스텀 스타일 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #fdf2f8;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #f472b6;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #db2777;
+        }
+
+        /* 현재 위치 펄스 애니메이션 마커 */
+        .my-location-marker {
+            width: 18px;
+            height: 18px;
+            background-color: #ec4899;
+            border: 3px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(236, 72, 153, 0.7);
+            position: relative;
+        }
+        .my-location-marker::before {
+            content: '';
+            position: absolute;
+            top: -7px;
+            left: -7px;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background-color: rgba(236, 72, 153, 0.4);
+            animation: pulse-pink 2s infinite;
+        }
+
+        @keyframes pulse-pink {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.9;
+            }
+            70% {
+                transform: scale(1.7);
+                opacity: 0;
+            }
+            100% {
+                transform: scale(0.9);
+                opacity: 0;
+            }
+        }
+    </style>
+
+    <!-- 카카오 지도 JavaScript API SDK 불러오기 (autoload=false 적용) -->
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=0284f30d15a21cd8c8d334026cc26d3b&libraries=services&autoload=false"></script>
+</head>
+<body class="bg-rose-50 text-slate-800 h-screen flex flex-col md:flex-row overflow-hidden">
+
+    <!-- [왼쪽 영역] 디저트 검색 & 탭 선택 & 결과 리스트 (너비: 데스크톱 400px) -->
+    <aside class="w-full md:w-[400px] h-1/2 md:h-full bg-white flex flex-col z-10 shadow-2xl border-r border-rose-100">
+        
+        <!-- 헤더 영역 (디저트 투어 컨셉) -->
+        <header class="p-4 bg-gradient-to-r from-pink-500 to-rose-500 text-white flex items-center justify-between shadow-md">
+            <div class="flex items-center space-x-2">
+                <span class="text-2xl">🧁</span>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight leading-none">디저트 투어 지도</h1>
+                    <p class="text-[11px] text-rose-100 font-light mt-0.5">내 주변 맛있는 디저트 탐방</p>
+                </div>
+            </div>
+            <span class="text-xs bg-white/20 backdrop-blur-md text-white px-2.5 py-1 rounded-full font-medium shadow-inner">
+                Kakao Map
+            </span>
+        </header>
+
+        <!-- 디저트 탭 선택 영역 (지시사항 ③ 핵심 요구사항) -->
+        <section class="p-3 bg-rose-50/50 border-b border-rose-100">
+            <div class="grid grid-cols-2 gap-2 p-1 bg-rose-100/60 rounded-xl">
+                <!-- 탭 1: 디저트 카페 -->
+                <button 
+                    id="tabCafe" 
+                    onclick="switchDessertTab('cafe')" 
+                    class="py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center space-x-1.5 transition-all duration-200 bg-white text-rose-600 shadow-sm"
+                >
+                    <span>🍰</span>
+                    <span>디저트 카페</span>
+                </button>
+                <!-- 탭 2: 베이커리 / 빵집 -->
+                <button 
+                    id="tabBakery" 
+                    onclick="switchDessertTab('bakery')" 
+                    class="py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center space-x-1.5 transition-all duration-200 text-slate-600 hover:text-rose-600"
+                >
+                    <span>🥐</span>
+                    <span>베이커리 / 빵집</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 키워드 검색창 및 세부 추천 태그 -->
+        <section class="p-3 bg-white border-b border-slate-100 space-y-2.5">
+            <form id="searchForm" onsubmit="handleSearchSubmit(event)" class="relative flex items-center">
+                <input 
+                    type="text" 
+                    id="keywordInput" 
+                    placeholder="직접 검색어 입력 (예: 마카롱, 크로플)" 
+                    value="디저트 카페"
+                    class="w-full pl-9 pr-9 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 focus:bg-white transition shadow-sm"
+                />
+                <i class="fa-solid fa-magnifying-glass absolute left-3 text-slate-400 text-xs"></i>
+                <button 
+                    type="button" 
+                    onclick="clearSearchInput()" 
+                    id="clearBtn"
+                    class="hidden absolute right-12 text-slate-400 hover:text-slate-600 p-1"
+                >
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+                <button 
+                    type="submit" 
+                    class="ml-2 bg-rose-500 hover:bg-rose-600 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition duration-150 flex items-center shrink-0 shadow-md active:scale-95"
+                >
+                    검색
+                </button>
+            </form>
+
+            <!-- 디저트 세부 태그 추천 -->
+            <div class="flex items-center space-x-1.5 overflow-x-auto pb-1 text-[11px] text-slate-600">
+                <span class="text-rose-400 font-bold shrink-0">추천:</span>
+                <button onclick="searchByTag('마카롱')" class="bg-rose-50 text-rose-700 border border-rose-100 px-2 py-0.5 rounded-full hover:bg-rose-100 shrink-0 transition">#마카롱</button>
+                <button onclick="searchByTag('소금빵')" class="bg-rose-50 text-rose-700 border border-rose-100 px-2 py-0.5 rounded-full hover:bg-rose-100 shrink-0 transition">#소금빵</button>
+                <button onclick="searchByTag('케이크')" class="bg-rose-50 text-rose-700 border border-rose-100 px-2 py-0.5 rounded-full hover:bg-rose-100 shrink-0 transition">#케이크</button>
+                <button onclick="searchByTag('빙수')" class="bg-rose-50 text-rose-700 border border-rose-100 px-2 py-0.5 rounded-full hover:bg-rose-100 shrink-0 transition">#빙수</button>
+            </div>
+        </section>
+
+        <!-- 검색 결과 상태 요약 바 -->
+        <div class="px-4 py-2 bg-slate-50 border-b border-slate-100 flex justify-between items-center text-xs text-slate-500">
+            <span>주변 검색 결과: <strong id="resultCountText" class="text-rose-600 font-bold">0</strong>건</span>
+            <span id="searchStatusText" class="text-slate-400">대기 중</span>
+        </div>
+
+        <!-- 검색 결과 목록 (스크롤 영역) -->
+        <section id="placesListContainer" class="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50">
+            <div class="flex flex-col items-center justify-center h-full text-slate-400 space-y-2 py-10">
+                <i class="fa-solid fa-cookie-bite text-3xl text-rose-200"></i>
+                <p class="text-xs">상단 탭을 누르거나 디저트 키워드를 검색해 보세요!</p>
+            </div>
+        </section>
+
+        <!-- 하단 페이지네이션 -->
+        <footer id="paginationContainer" class="p-2.5 bg-white border-t border-slate-100 flex justify-center items-center space-x-1">
+            <!-- 페이지 번호 버튼들이 동적으로 추가됩니다 -->
+        </footer>
+    </aside>
+
+    <!-- [오른쪽 영역] 카카오 지도 화면 -->
+    <main class="w-full md:flex-1 h-1/2 md:h-full relative bg-slate-200">
+        <!-- 지도 컨테이너 -->
+        <div id="map" class="w-full h-full"></div>
+
+        <!-- 지도 오른쪽 상단 플로팅 도구 버튼들 -->
+        <div class="absolute top-4 right-4 z-10 flex flex-col space-y-2">
+            <!-- 현재 위치 버튼 (지시사항 ③ 기능 1: '현재위치') -->
+            <button 
+                onclick="moveToCurrentLocation()" 
+                title="현재 위치로 이동 및 주변 디저트 재검색"
+                class="bg-white hover:bg-rose-50 text-rose-600 font-semibold px-3 py-2 rounded-xl shadow-lg border border-rose-100 flex items-center space-x-1.5 transition active:scale-95 group text-xs"
+            >
+                <i class="fa-solid fa-location-crosshairs text-rose-500 group-hover:rotate-45 transition-transform duration-300"></i>
+                <span>현재위치</span>
+            </button>
+
+            <!-- 지도 중앙 기준 재검색 버튼 -->
+            <button 
+                onclick="searchPlacesInCurrentView()" 
+                title="지도 현 위치 화면 중심 재검색"
+                class="bg-white hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 flex items-center space-x-1.5 transition active:scale-95 text-xs font-medium"
+            >
+                <i class="fa-solid fa-rotate-right text-indigo-500"></i>
+                <span>이 위치에서 재검색</span>
+            </button>
+        </div>
+
+        <!-- 위치 상태 표시 배지 -->
+        <div id="locationStatusBadge" class="absolute bottom-4 left-4 z-10 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md border border-rose-100 text-xs flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+            <span id="locationBadgeText" class="text-slate-600 font-medium">현재 위치 확인 중...</span>
+        </div>
+    </main>
+
+    <!-- 커스텀 토스트 알림 메시지 (alert 대용) -->
+    <div id="toastMessage" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800/90 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium opacity-0 transition-opacity duration-300 pointer-events-none z-50 flex items-center space-x-2 backdrop-blur-sm">
+        <i class="fa-solid fa-circle-check text-rose-400"></i>
+        <span id="toastText">알림 메시지</span>
+    </div>
+
+    <script>
+        /**
+         * ==========================================
+         * 전역 변수 선언 (Global Variables)
+         * ==========================================
+         */
+        let mapInstance = null;         // Kakao 지도 객체
+        let placesService = null;       // Kakao 장소 검색 서비스 객체
+        let currentInfoWindow = null;   // 현재 열려있는 정보창(InfoWindow) 객체
+        let placeMarkers = [];          // 지도에 생성된 디저트 장소 마커 배열
+        let userLocationMarker = null;  // 사용자의 현재 GPS 위치 마커
+
+        // 기본 좌표 (사용자 위치를 얻지 못할 경우 서울시청 기준 fallback)
+        let userLatitude = 37.566826;
+        let userLongitude = 126.9786567;
+
+        // 현재 선택된 탭 상태 ('cafe': 디저트 카페, 'bakery': 베이커리)
+        let activeTab = 'cafe';
+
+        /**
+         * 1. 웹 페이지 로드가 완료되면 실행되는 초기화 이벤트
+         */
+        window.onload = function() {
+            // Kakao Maps SDK 스크립트 로드가 완료된 후 안전하게 지도 초기화
+            kakao.maps.load(function() {
+                initKakaoMap();
+            });
+
+            // 검색창 X 버튼 표시 처리
+            const inputEl = document.getElementById('keywordInput');
+            const clearBtn = document.getElementById('clearBtn');
+            inputEl.addEventListener('input', function() {
+                if (this.value.length > 0) {
+                    clearBtn.classList.remove('hidden');
+                } else {
+                    clearBtn.classList.add('hidden');
+                }
+            });
+        };
+
+        /**
+         * 2. 카카오 지도 및 서비스 객체 초기화
+         */
+        function initKakaoMap() {
+            const mapContainer = document.getElementById('map');
+            
+            // 지도 기본 설정 (지시사항: 확대 레벨 5 설정)
+            const mapOptions = {
+                center: new kakao.maps.LatLng(userLatitude, userLongitude),
+                level: 5 
+            };
+
+            // 지도 및 장소 검색 서비스 인스턴스 생성
+            mapInstance = new kakao.maps.Map(mapContainer, mapOptions);
+            placesService = new kakao.maps.services.Places();
+            currentInfoWindow = new kakao.maps.InfoWindow({ zIndex: 10 });
+
+            // 지도 줌 컨트롤 추가
+            const zoomControl = new kakao.maps.ZoomControl();
+            mapInstance.addControl(zoomControl, kakao.maps.ControlPosition.RIGHT);
+
+            // 사용자의 현재 GPS 위치 요청
+            requestUserLocation();
+        }
+
+        /**
+         * 3. 브라우저 Geolocation API를 사용하여 현재 위치 가져오기
+         */
+        function requestUserLocation() {
+            const badgeText = document.getElementById('locationBadgeText');
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        userLatitude = position.coords.latitude;
+                        userLongitude = position.coords.longitude;
+                        const currentLatLng = new kakao.maps.LatLng(userLatitude, userLongitude);
+
+                        // 지도 중심을 현재 위치로 이동 및 레벨 5 설정
+                        mapInstance.setCenter(currentLatLng);
+                        mapInstance.setLevel(5);
+
+                        // 현재 위치 마커 생성
+                        displayCurrentLocationMarker(currentLatLng);
+
+                        badgeText.textContent = "현재 위치 설정 완료 (레벨 5)";
+                        showToast("현재 위치를 중심으로 지도가 설정되었습니다.");
+
+                        // 현재 활성화된 탭 기준 주변 디저트 검색 자동 실행
+                        executeDessertSearch();
+                    },
+                    function(error) {
+                        console.warn('Geolocation 오류 또는 권한 거부:', error.message);
+                        badgeText.textContent = "기본 위치 설정됨 (서울시청)";
+                        showToast("위치 권한을 확인해 주세요. 기본 위치로 검색합니다.");
+                        executeDessertSearch();
+                    },
+                    { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
+                );
+            } else {
+                badgeText.textContent = "Geolocation 미지원 브라우저";
+                executeDessertSearch();
+            }
+        }
+
+        /**
+         * 4. 탭 변경 함수 (지시사항 ③: 탭 1 & 탭 2 클릭 이벤트)
+         */
+        function switchDessertTab(tabType) {
+            activeTab = tabType;
+
+            const tabCafeBtn = document.getElementById('tabCafe');
+            const tabBakeryBtn = document.getElementById('tabBakery');
+            const keywordInput = document.getElementById('keywordInput');
+
+            if (tabType === 'cafe') {
+                // 탭 1 (디저트 카페) 활성화 UI
+                tabCafeBtn.className = "py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center space-x-1.5 transition-all duration-200 bg-white text-rose-600 shadow-sm";
+                tabBakeryBtn.className = "py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center space-x-1.5 transition-all duration-200 text-slate-600 hover:text-rose-600";
+                keywordInput.value = "디저트 카페";
+                showToast("🍰 '디저트 카페' 검색 모드로 변경되었습니다.");
+            } else if (tabType === 'bakery') {
+                // 탭 2 (베이커리 / 빵집) 활성화 UI
+                tabBakeryBtn.className = "py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center space-x-1.5 transition-all duration-200 bg-white text-rose-600 shadow-sm";
+                tabCafeBtn.className = "py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center space-x-1.5 transition-all duration-200 text-slate-600 hover:text-rose-600";
+                keywordInput.value = "베이커리";
+                showToast("🥐 '베이커리 / 빵집' 검색 모드로 변경되었습니다.");
+            }
+
+            document.getElementById('clearBtn').classList.remove('hidden');
+
+            // 탭 변경 시 기존 마커 및 리스트 삭제 후 새 검색 결과 등록
+            executeDessertSearch();
+        }
+
+        /**
+         * 5. 디저트 장소 검색 실행 함수
+         * 현재 지도 중심 좌표 기반 3km 반경 내 디저트 장소를 탐색합니다.
+         */
+        function executeDessertSearch() {
+            const keyword = document.getElementById('keywordInput').value.trim();
+
+            if (!keyword) {
+                showToast("검색할 디저트 키워드를 입력해 주세요.");
+                return;
+            }
+
+            document.getElementById('searchStatusText').textContent = "검색 중...";
+
+            // 지도 중심 좌표 기준으로 검색 옵션 설정
+            const searchOptions = {
+                location: mapInstance.getCenter(),
+                radius: 3000 // 중심 좌표 반경 3km
+            };
+
+            // 카카오 키워드 검색 API 호출
+            placesService.keywordSearch(keyword, handleSearchCallback, searchOptions);
+        }
+
+        /**
+         * 6. 검색 결과 처리 콜백 함수
+         */
+        function handleSearchCallback(data, status, pagination) {
+            const statusTextEl = document.getElementById('searchStatusText');
+            const resultCountEl = document.getElementById('resultCountText');
+
+            if (status === kakao.maps.services.Status.OK) {
+                statusTextEl.textContent = "검색 완료";
+                resultCountEl.textContent = data.length;
+
+                // 기존 마커 및 인포윈도우 완전히 삭제 (지시사항 요구사항)
+                clearPreviousMarkers();
+
+                // 검색 결과 목록 및 지도 마커 렌더링
+                renderPlacesList(data);
+                renderPaginationButtons(pagination);
+
+            } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+                statusTextEl.textContent = "결과 없음";
+                resultCountEl.textContent = "0";
+                clearPreviousMarkers();
+                renderEmptyState("주변에 검색 결과가 존재하지 않습니다.");
+                showToast("주변 검색 결과가 없습니다.");
+            } else if (status === kakao.maps.services.Status.ERROR) {
+                statusTextEl.textContent = "오류 발생";
+                showToast("장소 검색 도중 오류가 발생했습니다.");
+            }
+        }
+
+        /**
+         * 7. 검색 결과 리스트 렌더링 함수
+         */
+        function renderPlacesList(places) {
+            const listContainer = document.getElementById('placesListContainer');
+            listContainer.innerHTML = ''; // 기존 목록 비우기
+
+            places.forEach((place, index) => {
+                const placeLatLng = new kakao.maps.LatLng(place.y, place.x);
+
+                // 지도 마커 생성 및 등록
+                const marker = addPlaceMarker(placeLatLng, place, index);
+                placeMarkers.push(marker);
+
+                // 리스트 아이템 엘리먼트 생성
+                const itemEl = document.createElement('div');
+                itemEl.className = 'bg-white p-3 rounded-xl border border-slate-200/80 hover:border-rose-400 hover:shadow-md transition duration-150 cursor-pointer flex items-start space-x-3 group';
+
+                const badgeNum = index + 1;
+                const categoryShort = place.category_name ? place.category_name.split('>').pop().trim() : '디저트';
+
+                itemEl.innerHTML = `
+                    <div class="flex-shrink-0 w-7 h-7 bg-rose-100 group-hover:bg-rose-500 group-hover:text-white text-rose-600 rounded-lg flex items-center justify-center font-bold text-xs transition-colors">
+                        ${badgeNum}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between">
+                            <h3 class="font-bold text-slate-800 group-hover:text-rose-600 text-xs truncate transition-colors">
+                                ${place.place_name}
+                            </h3>
+                            <span class="text-[10px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded font-medium shrink-0 ml-1">
+                                ${categoryShort}
+                            </span>
+                        </div>
+                        <p class="text-[11px] text-slate-500 mt-1 truncate">
+                            <i class="fa-solid fa-location-dot text-slate-300 mr-1"></i>${place.road_address_name || place.address_name}
+                        </p>
+                        ${place.phone ? `
+                            <p class="text-[10px] text-slate-400 mt-0.5">
+                                <i class="fa-solid fa-phone text-slate-300 mr-1"></i>${place.phone}
+                            </p>
+                        ` : ''}
+                        <div class="mt-2 flex items-center justify-end">
+                            <a href="${place.place_url}" target="_blank" onclick="event.stopPropagation()" class="text-[11px] text-rose-500 hover:text-rose-700 font-medium flex items-center">
+                                상세보기 / 길찾기 <i class="fa-solid fa-chevron-right text-[9px] ml-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                `;
+
+                // 리스트 아이템 클릭 이벤트: 마커 위치로 이동 및 팝업창(InfoWindow) 표시
+                itemEl.onclick = function() {
+                    mapInstance.panTo(placeLatLng);
+                    openInfoWindow(marker, place);
+                };
+
+                listContainer.appendChild(itemEl);
+            });
+        }
+
+        /**
+         * 8. 지도 위에 카카오 마커 생성 함수
+         */
+        function addPlaceMarker(position, place, index) {
+            const marker = new kakao.maps.Marker({
+                position: position,
+                map: mapInstance
+            });
+
+            // 마커 클릭 시 팝업 상자 표시 (지시사항: 장소 이름과 주소 팝업 표시)
+            kakao.maps.event.addListener(marker, 'click', function() {
+                mapInstance.panTo(position);
+                openInfoWindow(marker, place);
+            });
+
+            return marker;
+        }
+
+        /**
+         * 9. 마커 클릭 팝업창 (InfoWindow) 표시 함수
+         */
+        function openInfoWindow(marker, place) {
+            if (!place) return;
+
+            const contentHtml = `
+                <div class="p-3 max-w-[210px] text-left">
+                    <div class="flex items-center space-x-1 mb-1">
+                        <span class="text-xs">🍰</span>
+                        <h4 class="font-bold text-xs text-slate-800 truncate">${place.place_name}</h4>
+                    </div>
+                    <p class="text-[11px] text-slate-500 leading-tight">${place.road_address_name || place.address_name}</p>
+                    ${place.phone ? `<p class="text-[10px] text-rose-600 mt-1 font-medium"><i class="fa-solid fa-phone mr-1"></i>${place.phone}</p>` : ''}
+                    <div class="mt-2 pt-2 border-t border-slate-100 flex justify-end">
+                        <a href="${place.place_url}" target="_blank" class="text-[10px] bg-rose-500 text-white px-2 py-1 rounded-md hover:bg-rose-600 transition inline-block">
+                            카카오맵 길찾기
+                        </a>
+                    </div>
+                </div>
+            `;
+
+            currentInfoWindow.setContent(contentHtml);
+            currentInfoWindow.open(mapInstance, marker);
+        }
+
+        /**
+         * 10. 기존 마커 및 인포윈도우 완전히 지우기 (탭/검색 변경 시 필수)
+         */
+        function clearPreviousMarkers() {
+            for (let i = 0; i < placeMarkers.length; i++) {
+                placeMarkers[i].setMap(null);
+            }
+            placeMarkers = [];
+            
+            if (currentInfoWindow) {
+                currentInfoWindow.close();
+            }
+        }
+
+        /**
+         * 11. 현재 위치 마커 표시 (분홍색 펄스 효과)
+         */
+        function displayCurrentLocationMarker(latLng) {
+            if (userLocationMarker) {
+                userLocationMarker.setMap(null);
+            }
+
+            const markerContent = document.createElement('div');
+            markerContent.className = 'my-location-marker';
+            markerContent.title = '내 현재 위치';
+
+            userLocationMarker = new kakao.maps.CustomOverlay({
+                position: latLng,
+                content: markerContent,
+                yAnchor: 0.5,
+                xAnchor: 0.5
+            });
+
+            userLocationMarker.setMap(mapInstance);
+        }
+
+        /**
+         * 12. 현재 위치 버튼 클릭 핸들러 (지시사항 ③: '현재위치' 기능)
+         */
+        function moveToCurrentLocation() {
+            showToast("현재 GPS 위치를 다시 가져옵니다...");
+            requestUserLocation();
+        }
+
+        /**
+         * 13. 현재 지도의 중심 화면 기준으로 재검색
+         */
+        function searchPlacesInCurrentView() {
+            executeDessertSearch();
+            showToast("현재 지도 화면 중심으로 재검색했습니다.");
+        }
+
+        /**
+         * 14. 검색 결과 없을 때 리스트 예외 처리
+         */
+        function renderEmptyState(message) {
+            const listContainer = document.getElementById('placesListContainer');
+            listContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full text-slate-400 space-y-2 py-12">
+                    <i class="fa-solid fa-stroopwafel text-3xl text-rose-200"></i>
+                    <p class="text-xs font-medium text-slate-500">${message}</p>
+                    <p class="text-[11px] text-slate-400">다른 키워드로 검색하거나 지도를 이동해 보세요.</p>
+                </div>
+            `;
+            document.getElementById('paginationContainer').innerHTML = '';
+        }
+
+        /**
+         * 15. 페이지네이션 버튼 동적 생성
+         */
+        function renderPaginationButtons(pagination) {
+            const paginationContainer = document.getElementById('paginationContainer');
+            paginationContainer.innerHTML = '';
+
+            for (let i = 1; i <= pagination.last; i++) {
+                const pageBtn = document.createElement('button');
+                pageBtn.className = `w-6 h-6 text-[11px] font-semibold rounded-md transition ${
+                    i === pagination.current 
+                        ? 'bg-rose-500 text-white shadow' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`;
+                pageBtn.innerText = i;
+                pageBtn.onclick = (function(page) {
+                    return function() {
+                        pagination.gotoPage(page);
+                    };
+                })(i);
+
+                paginationContainer.appendChild(pageBtn);
+            }
+        }
+
+        /**
+         * [유틸리티 및 폼 이벤트 함수]
+         */
+        function handleSearchSubmit(event) {
+            event.preventDefault();
+            executeDessertSearch();
+        }
+
+        function searchByTag(tagName) {
+            const inputEl = document.getElementById('keywordInput');
+            inputEl.value = tagName;
+            document.getElementById('clearBtn').classList.remove('hidden');
+            executeDessertSearch();
+        }
+
+        function clearSearchInput() {
+            const inputEl = document.getElementById('keywordInput');
+            inputEl.value = '';
+            document.getElementById('clearBtn').classList.add('hidden');
+            inputEl.focus();
+        }
+
+        // 알림 토스트 메시지 출력 (alert 대신 사용)
+        function showToast(message) {
+            const toast = document.getElementById('toastMessage');
+            const toastText = document.getElementById('toastText');
+            
+            toastText.textContent = message;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            toast.classList.add('opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 2300);
+        }
+    </script>
+</body>
+</html>
